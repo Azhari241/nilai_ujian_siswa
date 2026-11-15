@@ -1,0 +1,5 @@
+[functions.student-auth]
+verify_jwt = false
+
+[functions.student-accounts]
+verify_jwt = true
