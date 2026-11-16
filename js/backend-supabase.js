@@ -176,14 +176,15 @@
       },
       async getSettings() {
         const { data: s } = await sb.auth.getSession();
-        const [p, ps] = await Promise.all([
+        const [p, ps, as] = await Promise.all([
           sb.from('profiles').select('*').eq('id', s.session.user.id).single(),
           sb.from('portal_settings').select('*').eq('teacher_id', s.session.user.id).maybeSingle(),
+          sb.from('app_settings').select('portal_master').maybeSingle(),
         ]);
         if (p.error) fail(p.error); if (ps.error) fail(ps.error);
         if (!ps.data) throw new Error('Pengaturan guru belum dibuat. Minta administrator menjalankan migrasi 0003.');
         const st = await sb.rpc('get_portal_status');
-        const app = { portal_master: st.data ? st.data.master !== false : true, public_open: !!(st.data && st.data.enabled), open_teachers: st.data ? st.data.open_teachers || 0 : 0 };
+        const app = { portal_master: as.data ? as.data.portal_master !== false : true, public_open: !!(st.data && st.data.enabled), open_teachers: st.data ? st.data.open_teachers || 0 : 0 };
         return { profile: Object.assign({ email: s.session.user.email }, p.data), portal: ps.data, app };
       },
       async saveProfile(patch) {
@@ -195,7 +196,10 @@
         const { data, error } = await sb.from('portal_settings').update(patch).eq('teacher_id', s.session.user.id).select().single(); if (error) fail(error); return data;
       },
       async setPortalMaster(on) {
-        const { data, error } = await sb.from('app_settings').update({ portal_master: !!on }).eq('id', 1).select().single();
+        const { data: s } = await sb.auth.getSession();
+        const { data: prof, error: pe } = await sb.from('profiles').select('school_id').eq('id', s.session.user.id).single();
+        if (pe) fail(pe);
+        const { data, error } = await sb.from('app_settings').update({ portal_master: !!on, updated_at: new Date().toISOString() }).eq('school_id', prof.school_id).select().maybeSingle();
         if (error) fail(error); if (!data) throw new Error('Hanya administrator yang dapat membuka/menutup Portal Siswa sekolah.'); return data;
       },
       // ---- Manajemen akun guru: lewat Edge Function "admin-teachers" (service role HANYA di server) ----
@@ -213,8 +217,8 @@
       async audit(action, entity, entity_id, detail) { await sb.from('audit_logs').insert({ action, entity, entity_id: entity_id ? String(entity_id) : null, detail }); },
 
       async getPortalStatus() { const { data, error } = await sb.rpc('get_portal_status'); if (error) fail(error); return data; },
-      async portalLookup(className, name) {
-        const { data, error } = await sb.rpc('portal_lookup', { p_class_name: className, p_name: name });
+      async portalLookup(classIdOrName, name, schoolId) {
+        const { data, error } = await sb.rpc('portal_lookup', { p_class: String(classIdOrName || ''), p_name: String(name || ''), p_school_id: schoolId || null });
         if (error) fail(error); return data;
       },
     };
