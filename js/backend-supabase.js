@@ -208,6 +208,8 @@
       async createTeacher(p) { return (await this._admin('create', p)).teacher; },
       async updateTeacher(id, patch) { return (await this._admin('update', { id, patch })).teacher; },
       async deleteTeacher(id) { return (await this._admin('delete', { id })).ok; },
+      async listSchools() { return (await this._admin('list_schools')).schools || []; },
+      async createSchool(p) { return (await this._admin('create_school', p)).school; },
       async audit(action, entity, entity_id, detail) { await sb.from('audit_logs').insert({ action, entity, entity_id: entity_id ? String(entity_id) : null, detail }); },
 
       async getPortalStatus() { const { data, error } = await sb.rpc('get_portal_status'); if (error) fail(error); return data; },
