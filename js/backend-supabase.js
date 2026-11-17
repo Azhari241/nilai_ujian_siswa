@@ -125,6 +125,15 @@
         return this._studentFunction('student-accounts', 'create_many', { student_ids:studentIds, usernames:usernames || {}, must_change_password:mustChange !== false });
       },
       async resetStudentPassword(accountId) { return this._studentFunction('student-accounts', 'reset', { account_id:accountId }); },
+      // Hapus akun login siswa (maks. 500 per panggilan ke database; dibagi otomatis bila lebih).
+      async deleteStudentAccounts(accountIds) {
+        const ids = Array.from(new Set(accountIds || [])); let deleted = 0;
+        for (let i = 0; i < ids.length; i += 500) {
+          const { data, error } = await sb.rpc('delete_teacher_student_accounts', { p_account_ids: ids.slice(i, i + 500) });
+          if (error) fail(error); deleted += (data && data.deleted) || 0;
+        }
+        return { deleted };
+      },
       async setStudentAccountStatus(accountId, status) { return this._studentFunction('student-accounts', 'set_status', { account_id:accountId, status }); },
       async getStudentAuthEvents(accountId) { return (await this._studentFunction('student-accounts', 'events', { account_id:accountId })).events || []; },
 
