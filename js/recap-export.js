@@ -10,27 +10,27 @@
       ['Nama sekolah', p.school_name || '-'], ['Nama guru', p.full_name || '-'],
       ['Tahun pelajaran', opt.f.year || 'Semua'], ['Semester', opt.f.semester || 'Semua'],
       ['Kelas', opt.f.class ? (R.cMap[opt.f.class] || {}).name : 'Semua kelas'], ['Mata pelajaran', opt.f.subject ? (R.sMap[opt.f.subject] || {}).name : 'Semua mapel'],
-      ['Jenis penilaian', opt.f.kind ? U.KINDS[opt.f.kind] : 'Ujian, tugas & nilai manual'], ['Tanggal cetak', todayStr()],
+      ['Jenis penilaian', opt.f.kind ? U.RECAP_KINDS[opt.f.kind] : 'Ujian, tugas, nilai manual & game'], ['Tanggal cetak', todayStr()],
     ];
   }
   function tableData(R, opt) {
     const rows = opt.studentId ? R.rows.filter((r) => r.s.id === opt.studentId) : R.rows;
     const multiClass = !opt.f.class;
-    const kinds = opt.f.kind ? [opt.f.kind] : ['ujian', 'tugas', 'manual'];
-    const head = ['No', 'Nama Siswa'].concat(multiClass ? ['Kelas'] : [], kinds.map((k) => U.KINDS[k]), ['Rata-rata', 'Tertinggi', 'Terendah', 'KKTP', 'Ketuntasan', 'Keterangan']);
+    const kinds = RecapData.kindsFor(R, opt.f);
+    const head = ['No', 'Nama Siswa'].concat(multiClass ? ['Kelas'] : [], kinds.map((k) => U.RECAP_KINDS[k]), ['Rata-rata', 'Tertinggi', 'Terendah', 'KKTP', 'Ketuntasan', 'Keterangan']);
     const body = rows.map((r, i) => [String(i + 1), r.s.full_name].concat(multiClass ? [(r.cls || {}).name || ''] : [],
       [...kinds.map((k) => f1(r[k])), f1(r.avg), f1(r.max), f1(r.min), f1(r.kktp), r.n ? (r.tuntas ? 'Tuntas' : 'Belum tuntas') : 'Belum dinilai', r.n ? (r.fails ? r.fails + ' nilai < KKTP' : '') : '']));
     return { head, body, rows };
   }
   function detailData(R, studentId) {
     const pts = RecapData.studentTimeline(R, studentId);
-    return { head: ['No', 'Tanggal', 'Jenis', 'Penilaian', 'Mapel', 'Nilai', 'KKTP', 'Status'], body: pts.map((p, i) => [String(i + 1), U.fmtDate(p.e.date), U.KINDS[U.kindOf(p.e)], p.e.name, (R.sMap[p.e.subject_id] || {}).name || '', f1(p.score), f1(Number(p.e.kktp)), p.score >= Number(p.e.kktp) ? 'Tuntas' : 'Belum tuntas']) };
+    return { head: ['No', 'Tanggal', 'Jenis', 'Penilaian', 'Mapel', 'Nilai', 'KKTP', 'Status'], body: pts.map((p, i) => [String(i + 1), U.fmtDate(p.e.date), U.RECAP_KINDS[U.recapKindOf(p.e)], p.e.name, (R.sMap[p.e.subject_id] || {}).name || '', f1(p.score), f1(Number(p.e.kktp)), p.score >= Number(p.e.kktp) ? 'Tuntas' : 'Belum tuntas']) };
   }
   function chartSvgs(R, opt) {
     const out = [];
     if (opt.studentId) {
       const pts = RecapData.studentTimeline(R, opt.studentId);
-      if (pts.length) out.push({ title: 'Grafik perkembangan nilai — ' + (R.rows.find((r) => r.s.id === opt.studentId) || { s: {} }).s.full_name, svg: Charts.line({ categories: pts.map((p) => p.e.name), series: [{ name: 'Nilai', color: '#4f46e5', values: pts.map((p) => p.score), kinds: pts.map((p) => U.kindOf(p.e)) }], kktp: R.kktp }) });
+      if (pts.length) out.push({ title: 'Grafik perkembangan nilai — ' + (R.rows.find((r) => r.s.id === opt.studentId) || { s: {} }).s.full_name, svg: Charts.line({ categories: pts.map((p) => p.e.name), series: [{ name: 'Nilai', color: '#4f46e5', values: pts.map((p) => p.score), kinds: pts.map((p) => U.recapKindOf(p.e)) }], kktp: R.kktp }) });
     } else {
       const ct = RecapData.classTimeline(R);
       if (ct.length) out.push({ title: 'Grafik perkembangan kelas (rata-rata, tertinggi, terendah per penilaian)', svg: Charts.line({ categories: ct.map((p) => p.e.name), series: [{ name: 'Rata-rata', color: '#4f46e5', values: ct.map((p) => p.avg), kinds: ct.map((p) => p.kind) }, { name: 'Tertinggi', color: '#16a34a', values: ct.map((p) => p.max), dashed: true }, { name: 'Terendah', color: '#dc2626', values: ct.map((p) => p.min), dashed: true }], kktp: R.kktp }) });
