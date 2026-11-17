@@ -3,7 +3,7 @@
 (function () {
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const FONT = 'font-family="Plus Jakarta Sans, Arial, sans-serif"';
-  const KIND_COLOR = { ujian: '#4f46e5', tugas: '#d97706', manual: '#16a34a' };
+  const KIND_COLOR = { ujian: '#4f46e5', tugas: '#d97706', manual: '#16a34a', game: '#0891b2' };
   const short = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s));
 
   function axes(w, h, pad, min, max, steps) {
@@ -44,7 +44,7 @@
     if (legend) {
       let lx = pad.l;
       series.forEach((se) => { s += `<line x1="${lx}" x2="${lx + 18}" y1="14" y2="14" stroke="${se.color}" stroke-width="2.5" ${se.dashed ? 'stroke-dasharray="5 4"' : ''}/><text x="${lx + 24}" y="18" font-size="11.5" fill="#334155" ${FONT}>${esc(se.name)}</text>`; lx += 34 + se.name.length * 6.4; });
-      if (series.some((se) => se.kinds)) Object.entries({ Ujian: KIND_COLOR.ujian, Tugas: KIND_COLOR.tugas, Manual: KIND_COLOR.manual }).forEach(([k, c]) => { s += `<circle cx="${lx + 5}" cy="14" r="5" fill="${c}"/><text x="${lx + 14}" y="18" font-size="11.5" fill="#334155" ${FONT}>${k}</text>`; lx += 64; });
+      if (series.some((se) => se.kinds)) Object.entries({ Ujian: KIND_COLOR.ujian, Tugas: KIND_COLOR.tugas, Manual: KIND_COLOR.manual, Game: KIND_COLOR.game }).forEach(([k, c]) => { s += `<circle cx="${lx + 5}" cy="14" r="5" fill="${c}"/><text x="${lx + 14}" y="18" font-size="11.5" fill="#334155" ${FONT}>${k}</text>`; lx += 64; });
     }
     return s + '</svg>';
   }
