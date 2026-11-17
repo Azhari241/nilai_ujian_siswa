@@ -95,7 +95,17 @@
         if (!data.session) return null;
         try { return await this._studentFunction('student-auth', 'session'); } catch (_) { return null; }
       },
-      async getStudentPortalData() { return this._studentFunction('student-auth', 'portal'); },
+      async getStudentPortalData() {
+        const data = await this._studentFunction('student-auth', 'portal');
+        try {
+          const x = await this._game('student_extras');
+          data.games = x.games || [];
+          data.history = [].concat(data.history || [], x.history || []).sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+          if (data.summary) { data.summary.games = data.games.length; data.summary.activities = data.history.length; }
+        } catch (_) { /* portal tetap tampil tanpa game bila game-engine belum tersedia */ }
+        return data;
+      },
+      async getStudentProfile() { return (await this._studentFunction('student-auth', 'portal')).profile; },
       async signOutStudent() {
         let revokeError = null;
         try { await this._studentFunction('student-auth', 'logout'); } catch (e) { revokeError = e; }
@@ -214,6 +224,40 @@
       async deleteTeacher(id) { return (await this._admin('delete', { id })).ok; },
       async listSchools() { return (await this._admin('list_schools')).schools || []; },
       async createSchool(p) { return (await this._admin('create_school', p)).school; },
+
+      // ---- Game & Live Game Room: lewat Edge Function "game-engine" (kunci jawaban & skor dihitung di server) ----
+      async _game(action, payload) {
+        const { data, error } = await sb.functions.invoke('game-engine', { body: Object.assign({ action }, payload || {}) });
+        if (error) {
+          let m = error.message || 'Permintaan game gagal.';
+          try { const j = await error.context.json(); if (j && j.error) m = j.error; } catch (_) {}
+          throw new Error(/not found|404/i.test(m) ? 'Edge Function "game-engine" belum tersedia di project Supabase.' : m);
+        }
+        if (data && data.error) throw new Error(data.error);
+        return data ? data.data : null;
+      },
+      async listTeacherGames() { return this._game('list_games'); },
+      async getTeacherGameEditor(gameId) { return this._game('get_game_editor', { game_id: gameId }); },
+      async saveGameDefinition(p) { const a = p || {}; return this._game('save_game', { game_id: a.game_id, game: a.game, questions: a.questions }); },
+      async createGameAssignment(p) { return this._game('create_assignment', p || {}); },
+      async listLiveGameSources() { return this._game('live_sources'); },
+      async listLiveGameRooms() { return this._game('list_rooms'); },
+      async createLiveGameRoom(p) { return this._game('create_room', p || {}); },
+      async createLiveGameCode() { return this._game('create_code'); },
+      async removeLiveGameParticipant(roomId, participantId) { return this._game('remove_participant', { room_id: roomId, participant_id: participantId }); },
+      async setLiveGameRoomStatus(roomId, status) { return this._game('set_room_status', { room_id: roomId, status }); },
+      async startLiveGameRoom(roomId) { return this._game('start_room', { room_id: roomId }); },
+      async getLiveGameResults(roomId) { return this._game('room_results', { room_id: roomId }); },
+      async getLiveGameRoom(roomId) { return this._game('get_room', { room_id: roomId }); },
+      async getLiveGameParticipants(roomId) { return (await this._game('get_room', { room_id: roomId })).participants; },
+      async recoverLiveGameSession() { return this._game('recover'); },
+      async joinLiveGameRoom(code) { return this._game('join_room', { code }); },
+      async listStudentGameHistory() { return this._game('history'); },
+      async getStudentGameDetail(assignmentId) { return this._game('game_detail', { assignment_id: assignmentId }); },
+      async startGameAttempt(p) { return this._game('start_attempt', p || {}); },
+      async saveGameAnswer(p) { return this._game('save_answer', p || {}); },
+      async advanceGameAttempt(attemptId, index) { return this._game('advance_attempt', { attempt_id: attemptId, index }); },
+      async completeGameAttempt(attemptId) { return this._game('complete_attempt', { attempt_id: attemptId }); },
       async audit(action, entity, entity_id, detail) { await sb.from('audit_logs').insert({ action, entity, entity_id: entity_id ? String(entity_id) : null, detail }); },
 
       async getPortalStatus() { const { data, error } = await sb.rpc('get_portal_status'); if (error) fail(error); return data; },
