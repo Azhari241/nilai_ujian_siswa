@@ -494,6 +494,38 @@
       db.audit_logs.unshift({ id: uid(), actor: t.id, school_id: t.school_id, action: 'live_game_participant_remove', entity: 'live_game_participants', entity_id: p.id, detail: { room_id: room.id, student_id: p.student_id }, created_at: now() }); save(db);
       return liveRoomView(db, room, true);
     },
+    async deleteLiveGameRoom(roomId) {
+      await wait(100); const db = load(); const t = me(db); const room = findOwnedLiveRoom(db, roomId, t);
+      if (['COUNTDOWN', 'IN_PROGRESS', 'PAUSED'].includes(room.status)) throw new DbError('Ruang sedang berlangsung. Selesaikan atau batalkan ruang terlebih dahulu.');
+      (db.game_results || []).forEach((r) => { if (r.session_id === room.id) r.session_id = null; });
+      (db.game_attempts || []).forEach((r) => { if (r.session_id === room.id) r.session_id = null; });
+      db.live_game_participants = (db.live_game_participants || []).filter((p) => p.room_id !== room.id);
+      db.live_game_rooms = (db.live_game_rooms || []).filter((r) => r.id !== room.id);
+      db.audit_logs.unshift({ id: uid(), actor: t.id, school_id: t.school_id, action: 'live_game_room_delete', entity: 'live_game_rooms', entity_id: room.id, detail: { code: room.code }, created_at: now() }); save(db);
+      return { deleted: true };
+    },
+    async deleteTeacherGame(gameId) {
+      await wait(100); const db = load(); const t = me(db);
+      const game = (db.games || []).find((g) => g.id === gameId && g.teacher_id === t.id && g.school_id === t.school_id);
+      if (!game) throw new DbError('Game tidak ditemukan atau bukan milik guru ini.');
+      if ((db.live_game_rooms || []).some((r) => r.game_id === game.id && ['COUNTDOWN', 'IN_PROGRESS', 'PAUSED'].includes(r.status))) throw new DbError('Game ini sedang dimainkan di ruang live. Selesaikan atau batalkan ruangnya terlebih dahulu.');
+      const assignIds = new Set((db.game_assignments || []).filter((a) => a.game_id === game.id).map((a) => a.id));
+      const examIds = new Set((db.exams || []).filter((e) => e.source_game_assignment_id && assignIds.has(e.source_game_assignment_id)).map((e) => e.id));
+      const resultsDeleted = (db.game_results || []).filter((r) => r.game_id === game.id).length;
+      const roomIds = new Set((db.live_game_rooms || []).filter((r) => r.game_id === game.id).map((r) => r.id));
+      db.grades = (db.grades || []).filter((g) => !examIds.has(g.exam_id));
+      db.publication_settings = (db.publication_settings || []).filter((p) => !examIds.has(p.exam_id));
+      db.exams = (db.exams || []).filter((e) => !examIds.has(e.id));
+      db.game_results = (db.game_results || []).filter((r) => r.game_id !== game.id);
+      db.game_attempts = (db.game_attempts || []).filter((r) => r.game_id !== game.id);
+      db.live_game_participants = (db.live_game_participants || []).filter((p) => !roomIds.has(p.room_id));
+      db.live_game_rooms = (db.live_game_rooms || []).filter((r) => r.game_id !== game.id);
+      db.game_assignments = (db.game_assignments || []).filter((a) => a.game_id !== game.id);
+      db.game_questions = (db.game_questions || []).filter((q) => q.game_id !== game.id);
+      db.games = (db.games || []).filter((g) => g.id !== game.id);
+      db.audit_logs.unshift({ id: uid(), actor: t.id, school_id: t.school_id, action: 'game_delete', entity: 'games', entity_id: game.id, detail: { title: game.title, results_deleted: resultsDeleted }, created_at: now() }); save(db);
+      return { deleted: true, results_deleted: resultsDeleted };
+    },
     async setLiveGameRoomStatus(roomId, status) {
       await wait(100); const db = load(); const t = me(db); const room = findOwnedLiveRoom(db, roomId, t);
       const transitions = { WAITING: ['LOCKED', 'CANCELLED', 'EXPIRED'], LOCKED: ['WAITING', 'CANCELLED', 'EXPIRED'], COUNTDOWN: ['IN_PROGRESS', 'CANCELLED'], IN_PROGRESS: ['PAUSED', 'COMPLETED', 'CANCELLED'], PAUSED: ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'] };
