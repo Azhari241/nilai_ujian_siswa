@@ -7,7 +7,7 @@
     (e.status !== 'draft' && (U.kindOf(e) === 'tugas' ? (e.due_date || e.date) : e.date) < now);
 
   function build(d, f) {
-    const kindOf = U.kindOf;
+    const kindOf = U.recapKindOf;
     const exams = d.exams.filter((e) => (!f.year || e.academic_year === f.year) && (!f.semester || e.semester === f.semester) && (!f.class || e.class_id === f.class) && (!f.subject || e.subject_id === f.subject) && (!f.kind || kindOf(e) === f.kind))
       .sort((a, b) => (a.academic_year || '').localeCompare(b.academic_year || '') || (SEM[a.semester] - SEM[b.semester]) || (a.date || '').localeCompare(b.date || '') || a.name.localeCompare(b.name));
     const eMap = Object.fromEntries(exams.map((e) => [e.id, e]));
@@ -26,11 +26,11 @@
     const kktpDefault = kktpValues.length ? Math.round(avg(kktpValues) * 10) / 10 : 75;
     const rows = students.map((s) => {
       const sg = effectiveGrades.filter((g) => g.student_id === s.id && eMap[g.exam_id]);
-      const by = { ujian: [], tugas: [], manual: [] }; let fails = 0;
+      const by = { ujian: [], tugas: [], manual: [], game: [] }; let fails = 0;
       sg.forEach((g) => { const e = eMap[g.exam_id]; by[kindOf(e)].push(Number(g.score)); if (Number(g.score) < Number(e.kktp)) fails++; });
       const all = sg.map((g) => Number(g.score));
       const myExams = applicableExams.filter((e) => e.class_id === s.class_id);
-      return { s, cls: cMap[s.class_id], n: sg.length, total: myExams.length, ujian: avg(by.ujian), tugas: avg(by.tugas), manual: avg(by.manual), avg: avg(all), max: all.length ? Math.max(...all) : null, min: all.length ? Math.min(...all) : null, fails, tuntas: sg.length > 0 && fails === 0, kktp: kktpDefault };
+      return { s, cls: cMap[s.class_id], n: sg.length, total: myExams.length, ujian: avg(by.ujian), tugas: avg(by.tugas), manual: avg(by.manual), game: avg(by.game), avg: avg(all), max: all.length ? Math.max(...all) : null, min: all.length ? Math.min(...all) : null, fails, tuntas: sg.length > 0 && fails === 0, kktp: kktpDefault };
     });
     const allScores = effectiveGrades.map((g) => Number(g.score));
     const passN = effectiveGrades.filter((g) => Number(g.score) >= Number(eMap[g.exam_id].kktp)).length;
@@ -50,6 +50,8 @@
     const m = {}; R.grades.forEach((g) => { const e = R.exams.find((x) => x.id === g.exam_id); const k = e.academic_year + ' ' + e.semester; (m[k] = m[k] || []).push(Number(g.score)); });
     return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => ({ label: k, value: avg(v) }));
   }
-  function perKind(R) { return ['ujian', 'tugas', 'manual'].map((k) => { const v = R.grades.filter((g) => U.kindOf(R.exams.find((e) => e.id === g.exam_id)) === k).map((g) => Number(g.score)); return { kind: k, label: U.KINDS[k], value: avg(v), n: v.length }; }); }
-  window.RecapData = { build, studentTimeline, classTimeline, perSemester, perKind };
+  function perKind(R) { return ['ujian', 'tugas', 'manual', 'game'].map((k) => { const v = R.grades.filter((g) => U.recapKindOf(R.exams.find((e) => e.id === g.exam_id)) === k).map((g) => Number(g.score)); return { kind: k, label: U.RECAP_KINDS[k], value: avg(v), n: v.length }; }); }
+  /* Kolom jenis penilaian yang ditampilkan; kolom Game hanya muncul jika ada penilaian game. */
+  function kindsFor(R, f) { return f.kind ? [f.kind] : ['ujian', 'tugas', 'manual'].concat(R.exams.some((e) => U.recapKindOf(e) === 'game') ? ['game'] : []); }
+  window.RecapData = { build, studentTimeline, classTimeline, perSemester, perKind, kindsFor };
 })();
