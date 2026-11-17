@@ -63,10 +63,14 @@
   const TASK_TYPES = ['Tugas menulis', 'Tugas menghafal', 'Tugas praktik', 'Tugas membaca', 'Tugas membuat rangkuman', 'Tugas individu', 'Tugas kelompok', 'Pekerjaan rumah', 'Lainnya'];
   const MANUAL_CATEGORIES = ['Hafalan', 'Praktik', 'Tugas Kelas', 'Presentasi', 'Keaktifan', 'Pekerjaan Rumah', 'Kedisiplinan', 'Keterampilan', 'Penilaian Harian', 'Nilai Tambahan'];
   const kindOf = (e) => e.kind || 'ujian';
+  // Khusus Rekap Nilai: penilaian hasil game (dibuat otomatis) dipisah dari "Nilai Manual".
+  // U.KINDS dan U.kindOf sengaja tidak diubah agar halaman lain tidak terpengaruh.
+  const RECAP_KINDS = Object.assign({}, KINDS, { game: 'Game' });
+  const recapKindOf = (e) => ((e.source_game_assignment_id || e.category === 'Game') ? 'game' : kindOf(e));
   const typeLabel = (e) => e.category || e.task_type || e.exam_type || '';
   // skor mentah (0..max) → nilai 0..100
   const toScore = (raw, max) => Math.round((Number(raw) / (Number(max) || 100)) * 10000) / 100;
   const fromScore = (score, max) => Math.round((Number(score) * (Number(max) || 100)) / 100 * 100) / 100;
 
-  window.U = { fmtDate, fmtDateTime, fmtNum, initials, stats, distribution, NISN_RE, ARABIC_RE, downloadXlsx, readXlsx, norm, normName, copyText, EXAM_TYPES, SEMESTERS, EXAM_STATUS, KINDS, TASK_TYPES, MANUAL_CATEGORIES, kindOf, typeLabel, toScore, fromScore };
+  window.U = { fmtDate, fmtDateTime, fmtNum, initials, stats, distribution, NISN_RE, ARABIC_RE, downloadXlsx, readXlsx, norm, normName, copyText, EXAM_TYPES, SEMESTERS, EXAM_STATUS, KINDS, RECAP_KINDS, recapKindOf, TASK_TYPES, MANUAL_CATEGORIES, kindOf, typeLabel, toScore, fromScore };
 })();
