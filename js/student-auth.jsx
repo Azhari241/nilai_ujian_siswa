@@ -1,4 +1,4 @@
-/* Portal akun siswa DEMO. Autentikasi ini hanya simulasi browser dan tidak untuk data produksi. */
+/* Portal akun siswa. Mendukung mode demo (data di browser) dan mode Supabase (lintas perangkat). */
 
 const STUDENT_NAV = [
   { to: '/siswa', label: 'Beranda', icon: 'House' }, { to: '/siswa/game', label: 'Game', icon: 'Gamepad2' },
@@ -6,6 +6,10 @@ const STUDENT_NAV = [
   { to: '/siswa/materi', label: 'Materi', icon: 'Library' }, { to: '/siswa/riwayat', label: 'Riwayat', icon: 'History' },
   { to: '/siswa/profil', label: 'Profil', icon: 'ContactRound' },
 ];
+
+/* Menu yang ditampilkan saat backend memakai Supabase (mode produksi).
+   Tambahkan rute lain di sini setelah fiturnya terhubung ke Supabase. */
+const SUPABASE_STUDENT_ROUTES = ['/siswa', '/siswa/game', '/siswa/profil'];
 
 function StudentPortalFrame({ title, children }) {
   const { backend, studentSession, setStudentSession } = useApp(); const path = parseHash().path; const toast = useToast();
@@ -19,7 +23,7 @@ function StudentPortalFrame({ title, children }) {
       </header>
       <div className="student-wrap">
         <div className="student-page-head"><div><div className="eyebrow">PORTAL SISWA</div><h1>{title}</h1></div></div>
-        <nav className="student-main-nav" aria-label="Navigasi Portal Siswa">{(backend.mode === 'demo' ? STUDENT_NAV : STUDENT_NAV.filter(item => ['/siswa', '/siswa/profil'].includes(item.to))).map((item) => <Link key={item.to} to={item.to} className={'student-nav-link' + (path === item.to ? ' active' : '')} aria-current={path === item.to ? 'page' : undefined}><Icon name={item.icon} size={16} /><span>{item.label}</span></Link>)}</nav>
+        <nav className="student-main-nav" aria-label="Navigasi Portal Siswa">{(backend.mode === 'demo' ? STUDENT_NAV : STUDENT_NAV.filter(item => SUPABASE_STUDENT_ROUTES.includes(item.to))).map((item) => <Link key={item.to} to={item.to} className={'student-nav-link' + (path === item.to ? ' active' : '')} aria-current={path === item.to ? 'page' : undefined}><Icon name={item.icon} size={16} /><span>{item.label}</span></Link>)}</nav>
         {backend.mode === 'demo' && <Alert tone="warn" title="Mode DEMO">Data belajar tersimpan di browser ini. Akun DEMO bukan untuk data sekolah nyata.</Alert>}
         <div className="student-content">{children}</div>
       </div>
@@ -86,7 +90,7 @@ function StudentLoginPage() {
 function StudentDashboardPage() {
   const { backend } = useApp(); const { data, error, retry } = useStudentPortalData();
   if (error || !data) return <StudentPortalState title="Beranda" error={error} onRetry={retry} />;
-  if (backend.mode === 'supabase') return <StudentPortalState title="Beranda"><section className="card card-pad col gap-12"><div className="row gap-12"><div className="avatar" style={{ width:60, height:60, fontSize:21 }}>{U.initials(data.profile.student.full_name)}</div><div><div className="eyebrow">SELAMAT DATANG</div><h2>{data.profile.student.full_name}</h2><div className="muted">{data.profile.class?.name || 'Kelas belum tersedia'} · {data.profile.school.school_name}</div></div></div><div className="student-profile-grid"><div><span>Username</span><b>{data.profile.account.username}</b></div><div><span>Status akun</span><b>{data.profile.account.account_status}</b></div><div><span>Login terakhir</span><b>{studentFormatDate(data.profile.account.last_login)}</b></div></div><Alert tone="info" title="Akun siswa aktif">Identitas siswa sudah terhubung ke akun Supabase Auth. Halaman nilai, tugas, dan pembelajaran akan diintegrasikan pada fase berikutnya.</Alert><div className="row-wrap"><Link to="/siswa/profil" className="btn btn-outline"><Icon name="ContactRound" size={15}/>Profil saya</Link><Link to="/siswa/ganti-password" className="btn btn-outline"><Icon name="KeyRound" size={15}/>Ganti password</Link></div></section></StudentPortalState>;
+  if (backend.mode === 'supabase') return <StudentPortalState title="Beranda"><section className="card card-pad col gap-12"><div className="row gap-12"><div className="avatar" style={{ width:60, height:60, fontSize:21 }}>{U.initials(data.profile.student.full_name)}</div><div><div className="eyebrow">SELAMAT DATANG</div><h2>{data.profile.student.full_name}</h2><div className="muted">{data.profile.class?.name || 'Kelas belum tersedia'} · {data.profile.school.school_name}</div></div></div><div className="student-profile-grid"><div><span>Username</span><b>{data.profile.account.username}</b></div><div><span>Status akun</span><b>{data.profile.account.account_status}</b></div><div><span>Login terakhir</span><b>{studentFormatDate(data.profile.account.last_login)}</b></div></div><Alert tone="info" title="Akun siswa aktif">Identitas siswa sudah terhubung ke akun Supabase Auth. Menu Game sudah tersedia. Halaman nilai, tugas, dan pembelajaran akan diintegrasikan pada fase berikutnya.</Alert><div className="row-wrap"><Link to="/siswa/game" className="btn btn-primary"><Icon name="Gamepad2" size={15}/>Main game</Link><Link to="/siswa/profil" className="btn btn-outline"><Icon name="ContactRound" size={15}/>Profil saya</Link><Link to="/siswa/ganti-password" className="btn btn-outline"><Icon name="KeyRound" size={15}/>Ganti password</Link></div></section></StudentPortalState>;
   const { profile, summary, grades, tasks, games, history } = data; const cls = profile.class;
   return <StudentPortalState title="Beranda">
     <div className="student-hero card card-pad"><div className="avatar" style={{ width: 60, height: 60, fontSize: 21 }}>{U.initials(profile.student.full_name)}</div><div className="grow"><div className="eyebrow">SELAMAT DATANG</div><h2>{profile.student.full_name}</h2><div className="muted">{profile.account.username} · {cls ? `${cls.name} · ${cls.academic_year || '—'}` : 'Kelas belum tersedia'} · {profile.school.school_name}</div></div><Badge tone="green" dot>Akun aktif</Badge></div>
@@ -125,11 +129,23 @@ function StudentRoomJoinPanel() {
   const { backend } = useApp(); const [code, setCode] = useState(''); const [room, setRoom] = useState(null); const [rooms, setRooms] = useState([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
   const recover = async () => { setLoading(true); setError(''); try { const sessions = await backend.recoverLiveGameSession(); setRooms(sessions); setRoom((current) => sessions.find((s) => s.id === (current && current.id)) || sessions[0] || null); } catch (e) { setError(e.message || 'Ruang aktif tidak dapat dipulihkan.'); } finally { setLoading(false); } };
   useEffect(() => { recover(); }, [backend]);
-  const join = async (e) => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); setNotice(''); try { const joined = await backend.joinLiveGameRoom(code); setRoom(joined); setRooms((current) => [joined, ...current.filter((r) => r.id !== joined.id)]); setCode(''); setNotice('Anda bergabung. Segarkan status untuk melihat perubahan dari host.'); } catch (x) { setError(x.message || 'Gagal bergabung ke ruang.'); } finally { setBusy(false); } };
+  /* Auto-refresh status ruang tiap 3 detik agar siswa melihat peserta baru dan tombol "Masuk ke permainan" tanpa menekan Perbarui. */
+  useEffect(() => {
+    if (!room || ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(room.status)) return;
+    const t = setInterval(async () => {
+      try {
+        const u = await backend.getLiveGameRoom(room.id);
+        setRoom(u);
+        setRooms((cur) => cur.map((r) => r.id === u.id ? u : r));
+      } catch (e) { /* abaikan, coba lagi di putaran berikutnya */ }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [backend, room && room.id, room && room.status]);
+  const join = async (e) => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); setNotice(''); try { const joined = await backend.joinLiveGameRoom(code); setRoom(joined); setRooms((current) => [joined, ...current.filter((r) => r.id !== joined.id)]); setCode(''); setNotice('Anda bergabung. Status ruang diperbarui otomatis setiap beberapa detik.'); } catch (x) { setError(x.message || 'Gagal bergabung ke ruang.'); } finally { setBusy(false); } };
   const refreshRoom = async () => { if (!room) return recover(); setBusy(true); setError(''); try { const updated = await backend.getLiveGameRoom(room.id); setRoom(updated); setRooms((current) => current.map((r) => r.id === updated.id ? updated : r)); setNotice('Status ruang diperbarui.'); } catch (x) { setError(x.message || 'Ruang gagal dimuat.'); } finally { setBusy(false); } };
   return <section className="card card-pad live-student-room">
     <div className="student-section-head"><div><h2>Gabung Live Game Room</h2><p>Masukkan kode dari guru atau pulihkan ruang yang sudah Anda ikuti.</p></div><button className="btn btn-outline btn-sm" type="button" onClick={refreshRoom} disabled={loading || busy}><Icon name="RefreshCw" size={15} />Perbarui</button></div>
-    <Alert tone="warn" title="Mode DEMO tanpa sinkronisasi real-time">Status peserta hanya berubah saat halaman diperbarui. Live Game lintas perangkat belum aktif.</Alert>
+    {backend.mode === 'demo' && <Alert tone="warn" title="Mode DEMO tanpa sinkronisasi real-time">Status peserta hanya berubah saat halaman diperbarui. Live Game lintas perangkat belum aktif.</Alert>}
     {error && <Alert tone="err">{error}</Alert>}{notice && <Alert tone="ok">{notice}</Alert>}
     {room ? <div className="live-student-room-details">{rooms.length > 1 && <Field label="Ruang aktif"><select className="input" value={room.id} onChange={(e) => setRoom(rooms.find((r) => r.id === e.target.value) || null)} disabled={busy}><option value="">Pilih ruang</option>{rooms.map((r) => <option key={r.id} value={r.id}>{r.game_title} · {r.class_name} · {r.code} · {r.status}</option>)}</select></Field>}<div className="live-room-head"><div className="grow"><div className="eyebrow">{room.class_name} · {room.teacher_name}</div><h3>{room.game_title}</h3><div className="small muted">Kode {room.code} · ruang tersimpan sampai {studentFormatDate(room.expires_at)}</div></div><Badge tone={studentRoomStatusTone(room.status)} dot>{room.status}</Badge></div><div className="live-room-roster"><div className="semibold small mb-8">Peserta ({room.participant_count})</div>{room.participants.length ? room.participants.map((p) => <div className="live-room-person" key={p.id}><span>{p.student_name}</span><Badge tone="green">Bergabung</Badge></div>) : <div className="small muted">Menunggu peserta lain.</div>}</div>{room.status==='IN_PROGRESS'&&<button className="btn btn-primary mt-12" onClick={()=>navigate('/siswa/game/live/'+room.id)}>Masuk ke permainan</button>}<div className="small muted mt-8">Host mengendalikan kunci dan mulai sesi. Siswa tidak dapat memulai permainan.</div></div> : <form className="live-student-join-form" onSubmit={join}><label className="field grow"><span className="label">Kode permainan</span><input className="input live-room-code-input" value={code} onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, '').slice(0, 6))} placeholder="6 karakter" autoCapitalize="characters" autoComplete="off" maxLength={6} disabled={busy || loading} /></label><button className="btn btn-primary" disabled={busy || loading || code.length !== 6}>{busy && <Spinner />}Gabung ruang</button></form>}
     {loading && !room && <div className="small muted mt-8">Memeriksa ruang yang sudah diikuti…</div>}
@@ -192,5 +208,4 @@ function StudentProfilePage() {
   </div>}</StudentPortalState>;
 }
 
-Object.assign(window, { StudentLoginPage, StudentDashboardPage, StudentChangePasswordPage, StudentProfilePage });
-
+Object.assign(window, { StudentLoginPage, StudentDashboardPage, StudentGamesPage, StudentChangePasswordPage, StudentProfilePage });
