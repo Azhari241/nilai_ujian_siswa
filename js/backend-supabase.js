@@ -258,6 +258,9 @@
       async saveGameAnswer(p) { return this._game('save_answer', p || {}); },
       async advanceGameAttempt(attemptId, index) { return this._game('advance_attempt', { attempt_id: attemptId, index }); },
       async completeGameAttempt(attemptId) { return this._game('complete_attempt', { attempt_id: attemptId }); },
+      // Hapus game / ruang live: fungsi database SECURITY DEFINER (hanya guru pemilik data).
+      async deleteTeacherGame(gameId) { const { data, error } = await sb.rpc('delete_teacher_game', { p_game_id: gameId }); if (error) fail(error); return data; },
+      async deleteLiveGameRoom(roomId) { const { data, error } = await sb.rpc('delete_teacher_live_room', { p_room_id: roomId }); if (error) fail(error); return data; },
       async audit(action, entity, entity_id, detail) { await sb.from('audit_logs').insert({ action, entity, entity_id: entity_id ? String(entity_id) : null, detail }); },
 
       async getPortalStatus() { const { data, error } = await sb.rpc('get_portal_status'); if (error) fail(error); return data; },
