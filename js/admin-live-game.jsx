@@ -1,79 +1,86 @@
-/* Live Game Room (DEMO): persistent room/host flow; no cross-device realtime. */
-function liveRoomStatusTone(status) {
-  return ({ WAITING: 'blue', LOCKED: 'amber', COUNTDOWN: 'amber', IN_PROGRESS: 'green', PAUSED: 'amber', COMPLETED: 'green', CANCELLED: 'red', EXPIRED: 'red' })[status] || 'blue';
-}
+const GAME_TEMPLATES = [
+  ['who_am_i', 'مَنْ أَنَا؟ · Tebak kosakata'], ['letters', 'رَتِّبِ الْحُرُوفَ · Susun huruf'],
+  ['memory', 'لُعْبَةُ الذَّاكِرَةِ · Memory card'], ['sentence', 'بِنَاءُ الْجُمْلَةِ · Susun kalimat'],
+  ['true_false', 'صَحِيحٌ أَمْ خَطَأٌ؟ · Benar atau salah'], ['competition', 'مُسَابَقَةُ اللُّغَةِ الْعَرَبِيَّةِ · Kompetisi'],
+];
+const newGameQuestion = () => ({ prompt: '', question_type: 'mcq', optionsText: '', correctText: '', explanation: '', media_url: '', pair_left: '', pair_right: '', points: '10' });
+const defaultGameForm = () => ({ title: '', description: '', template: 'who_am_i', subject_id: '', chapter: '', material: '', difficulty: 'Sedang', status: 'DRAFT', duration: '600', question_count: '1', max_attempts: '1', modes: ['individual', 'live'], show_explanation: true, show_leaderboard: true, shuffle_questions: true, shuffle_options: true, speed_bonus: false });
 
-function AdminLiveGamePage() {
+function AdminGamePage() {
   const { backend } = useApp(); const toast = useToast(); const confirm = useConfirm();
-  const [sources, setSources] = useState([]); const [rooms, setRooms] = useState([]); const [results, setResults] = useState({}); const [busy, setBusy] = useState(false); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [clock, setClock] = useState(Date.now());
-  const [form, setForm] = useState({ assignment_id: '', min_participants: '2', max_participants: '30', allow_late_join: false });
-  const reload = async () => {
-    setLoading(true); setError('');
-    try { const [s, r] = await Promise.all([backend.listLiveGameSources(), backend.listLiveGameRooms()]); setSources(s); setRooms(r); const pairs=await Promise.all(r.map(async(room)=>[room.id,await backend.getLiveGameResults(room.id)])); setResults(Object.fromEntries(pairs)); }
-    catch (e) { setError(e.message || 'Data Live Game Room gagal dimuat.'); }
-    finally { setLoading(false); }
-  };
-  useEffect(() => { reload(); }, [backend]);
-  useEffect(() => { if (!rooms.some((r) => r.status === 'COUNTDOWN')) return; const timer = setInterval(() => setClock(Date.now()), 250); return () => clearInterval(timer); }, [rooms]);
-  const create = async (e) => {
-    e.preventDefault(); if (busy) return; setBusy(true); setError('');
-    try { const room = await backend.createLiveGameRoom(form); setForm((v) => Object.assign({}, v, { assignment_id: '' })); await reload(); toast.success('Ruang dibuat. Kode permainan: ' + room.code); }
-    catch (x) { setError(x.message || 'Ruang gagal dibuat.'); }
-    finally { setBusy(false); }
-  };
-  const act = async (room, method, status) => {
+  const [catalog, setCatalog] = useState([]); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [classes, setClasses] = useState([]); const [subjects, setSubjects] = useState([]);
+  const [form, setForm] = useState(defaultGameForm); const [editingId,setEditingId]=useState(null);
+  const [questions, setQuestions] = useState([newGameQuestion()]); const [assignForm, setAssignForm] = useState({ game_id: '', class_id: '', start_at: '', end_at: '', modes: ['individual', 'live'], max_attempts: '1' });
+  const load = async () => { setLoading(true); setError(''); try { const [g,c,s] = await Promise.all([backend.listTeacherGames(), backend.list('classes'), backend.list('subjects')]); setCatalog(g); setClasses(c); setSubjects(s); } catch(e) { setError(e.message || 'Game gagal dimuat.'); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, [backend]);
+  const set = (key, value) => setForm((v) => Object.assign({}, v, { [key]: value }));
+  const updateQ = (index, key, value) => setQuestions((old) => old.map((q,i) => i === index ? Object.assign({}, q, { [key]: value }) : q));
+  const saveGame = async (status) => {
     if (busy) return; setBusy(true); setError('');
     try {
-      if (method === 'start') await backend.startLiveGameRoom(room.id);
-      else await backend.setLiveGameRoomStatus(room.id, status);
-      await reload(); toast.success('Status ruang diperbarui.');
-    } catch (x) { setError(x.message || 'Tindakan ruang gagal.'); }
-    finally { setBusy(false); }
+      const normalized = questions.filter((q) => q.prompt.trim()).map((q) => {
+        const type=form.template==='competition'?q.question_type:form.template; let correct_answer;
+        if (type === 'letters' || type === 'sentence') correct_answer = q.correctText.split('|').map((x) => x.trim()).filter(Boolean);
+        else if (type === 'true_false') correct_answer = q.correctText.trim();
+        else if (type === 'memory') correct_answer = q.correctText.trim();
+        else correct_answer = q.correctText.trim();
+        return { id:q.id, prompt: q.prompt, question_type:type, options: q.optionsText.split('|').map((x) => x.trim()).filter(Boolean), correct_answer, explanation: q.explanation, media_url: q.media_url, pair_left: q.pair_left, pair_right: q.pair_right, pair_left_id:q.pair_left_id, pair_right_id:q.pair_right_id, points: Number(q.points) || 10 };
+      });
+      if (!normalized.length) throw new Error('Tambahkan sekurangnya satu soal sebelum menyimpan.');
+      if (form.template === 'memory') normalized.forEach((q) => { q.pair_map = { pair: 'pair' }; });
+      const result = await backend.saveGameDefinition({ game_id:editingId, game: { title: form.title, description: form.description, template: form.template, subject_id: form.subject_id, chapter: form.chapter, material: form.material, difficulty: form.difficulty, status, settings: { modes: form.modes, duration_seconds: Number(form.duration) || 0, question_count: Number(form.question_count) || normalized.length, max_attempts: Number(form.max_attempts) || 0, show_explanation: form.show_explanation, show_leaderboard: form.show_leaderboard, shuffle_questions: form.shuffle_questions, shuffle_options: form.shuffle_options, speed_bonus: form.speed_bonus } }, questions: normalized });
+      toast.success(status === 'PUBLISHED' ? 'Game diterbitkan dan siap ditugaskan.' : 'Game draft disimpan.'); setEditingId(null); setForm(defaultGameForm()); setQuestions([newGameQuestion()]); await load();
+    } catch(e) { setError(e.message || 'Game gagal disimpan.'); } finally { setBusy(false); }
   };
-  const remove = async (room, participant) => {
-    const ok = await confirm({ title: 'Keluarkan peserta?', confirmText: 'Keluarkan', danger: true, message: `Keluarkan ${participant.student_name} dari ruang ${room.code}?` });
+  const editGame=async(game)=>{setBusy(true);setError('');try{const data=await backend.getTeacherGameEditor(game.id);const g=data.game;setEditingId(g.id);setForm({title:g.title||'',description:g.description||'',template:g.template,subject_id:g.subject_id||'',chapter:g.chapter||'',material:g.material||'',difficulty:g.difficulty||'Sedang',status:g.status,duration:String(g.settings.duration_seconds||0),question_count:String(g.settings.question_count||data.questions.length||1),max_attempts:String(g.settings.max_attempts??1),modes:g.settings.modes||['individual'],show_explanation:g.settings.show_explanation!==false,show_leaderboard:g.settings.show_leaderboard!==false,shuffle_questions:g.settings.shuffle_questions!==false,shuffle_options:g.settings.shuffle_options!==false,speed_bonus:g.settings.speed_bonus===true});setQuestions(data.questions.map((q)=>({id:q.id,prompt:q.prompt,question_type:q.question_type||g.template,optionsText:(q.options||[]).join(' | '),correctText:Array.isArray(q.correct_answer)?q.correct_answer.join(' | '):String(q.correct_answer??''),explanation:q.explanation||'',media_url:q.media_url||'',pair_left:q.pair_left||'',pair_right:q.pair_right||'',pair_left_id:q.pair_left_id,pair_right_id:q.pair_right_id,points:String(q.points||10)})));window.scrollTo({top:0,behavior:'smooth'});}catch(e){setError(e.message||'Data game gagal dibuka.');}finally{setBusy(false);}};
+  const assign = async (e) => { e.preventDefault(); if (busy) return; setBusy(true); setError(''); try { await backend.createGameAssignment({ game_id: assignForm.game_id, class_id: assignForm.class_id, start_at: assignForm.start_at ? new Date(assignForm.start_at).toISOString() : null, end_at: assignForm.end_at ? new Date(assignForm.end_at).toISOString() : null, max_attempts: assignForm.max_attempts, modes: assignForm.modes }); toast.success('Game ditugaskan ke kelas.'); setAssignForm((v) => Object.assign({}, v, { class_id: '', start_at: '', end_at: '' })); await load(); } catch(x) { setError(x.message || 'Penugasan gagal dibuat.'); } finally { setBusy(false); } };
+  const removeGame = async (g) => {
+    if (busy) return;
+    const n = (g.assignments || []).length;
+    const ok = await confirm({ title: 'Hapus game?', confirmText: 'Hapus game', danger: true,
+      message: `Game "${g.title}" akan dihapus permanen beserta soal${n ? ', penugasan di ' + n + ' kelas' : ''}, ruang permainan, dan semua hasil siswa. Nilai game ini di Rekap Nilai juga ikut terhapus. Tindakan ini tidak dapat dibatalkan.` });
     if (!ok) return;
     setBusy(true); setError('');
-    try { await backend.removeLiveGameParticipant(room.id, participant.id); await reload(); toast.success('Peserta dikeluarkan dari ruang.'); }
-    catch (x) { setError(x.message || 'Peserta gagal dikeluarkan.'); }
-    finally { setBusy(false); }
+    try {
+      await backend.deleteTeacherGame(g.id);
+      if (editingId === g.id) { setEditingId(null); setForm(defaultGameForm()); setQuestions([newGameQuestion()]); }
+      toast.success('Game dihapus.'); await load();
+    } catch (e) { setError(e.message || 'Game gagal dihapus.'); } finally { setBusy(false); }
   };
-  const copyCode = async (code) => { try { await navigator.clipboard.writeText(code); toast.success('Kode permainan disalin.'); } catch (e) { toast.error('Clipboard tidak tersedia. Salin kode secara manual.'); } };
+  const toggleMode = (key) => setForm((v) => Object.assign({}, v, { modes: v.modes.includes(key) ? v.modes.filter((m) => m !== key) : [...v.modes, key] }));
+  const toggleAssignMode = (key) => setAssignForm((v) => Object.assign({}, v, { modes: v.modes.includes(key) ? v.modes.filter((m) => m !== key) : [...v.modes, key] }));
+  const selected = catalog.find((g) => g.id === assignForm.game_id);
   return <>
-    <PageHead title="Live Game Room" desc="Buat ruang terpisah dari penugasan game yang sudah diterbitkan. Sesi DEMO tersimpan lokal dan tidak tersinkron lintas perangkat secara real-time." actions={<button type="button" className="btn btn-outline" onClick={reload} disabled={loading}><Icon name="RefreshCw" size={16} />Perbarui</button>} />
-    {error && <Alert tone="err" title="Tidak dapat memproses ruang">{error}</Alert>}
-    <Alert tone="warn" title="Batas mode DEMO">Status dan peserta disimpan dalam localStorage browser ini. Peserta di perangkat lain tidak akan menerima pembaruan otomatis; gunakan Perbarui untuk membaca ulang. Supabase Realtime/Edge Functions belum dihubungkan.</Alert>
-    <section className="card card-pad live-room-create">
-      <div className="card-title mb-12">Buat ruang dari game terbit</div>
-      {!loading && !sources.length && <EmptyState icon="Gamepad2" title="Belum ada game yang dapat dijadikan sesi" text="Ruang hanya dapat dibuat dari penugasan game terbit dengan soal, mode Live, dan kelas yang valid. Buat game dan tugaskan melalui menu Manajemen Game." />}
-      {!!sources.length && <form className="col gap-12" onSubmit={create}>
-        <Field label="Game dan kelas sasaran" required><select className="input" required value={form.assignment_id} onChange={(e) => setForm((v) => Object.assign({}, v, { assignment_id: e.target.value }))} disabled={busy}><option value="">Pilih penugasan game</option>{sources.map((s) => <option key={s.assignment_id} value={s.assignment_id}>{s.title} · {s.subject} · {s.class_name}</option>)}</select></Field>
-        <div className="live-room-form-grid">
-          <Field label="Peserta minimum"><input className="input" type="number" min="1" max="100" value={form.min_participants} onChange={(e) => setForm((v) => Object.assign({}, v, { min_participants: e.target.value }))} disabled={busy} /></Field>
-          <Field label="Peserta maksimum"><input className="input" type="number" min="1" max="100" value={form.max_participants} onChange={(e) => setForm((v) => Object.assign({}, v, { max_participants: e.target.value }))} disabled={busy} /></Field>
-        </div>
-        <label className="live-room-check"><input type="checkbox" checked={form.allow_late_join} onChange={(e) => setForm((v) => Object.assign({}, v, { allow_late_join: e.target.checked }))} disabled={busy} /><span>Izinkan peserta terlambat bergabung setelah sesi dimulai</span></label>
-        <div><button className="btn btn-primary" disabled={busy || loading}>{busy && <Spinner />}Buat ruang dan kode</button></div>
-      </form>}
-    </section>
-    <div className="card-title mt-16">Ruang permainan</div>
-    {loading ? <div className="card card-pad"><LoadingState /></div> : !rooms.length ? <div className="card card-pad"><EmptyState icon="Radio" title="Belum ada ruang permainan" text="Ruang yang dibuat untuk penugasan game Anda akan tercatat di sini." /></div> : <div className="live-room-list">{rooms.map((room) => <article className="card card-pad live-room-card" key={room.id}>
-      <div className="live-room-head"><div className="grow"><div className="eyebrow">{room.class_name} · {room.teacher_name}</div><h2>{room.game_title}</h2><div className="small muted">Kode ruang <b className="live-room-code">{room.code}</b> · dibuat {new Date(room.created_at).toLocaleString('id-ID')}</div></div><Badge tone={liveRoomStatusTone(room.status)} dot>{room.status}</Badge></div>
-      <div className="live-room-meta"><span>{room.participant_count}/{room.max_participants} peserta</span><span>Minimum {room.min_participants}</span><span>{room.allow_late_join ? 'Peserta terlambat diizinkan' : 'Peserta terlambat ditutup'}</span><span>Kedaluwarsa {new Date(room.expires_at).toLocaleString('id-ID')}</span></div>
-      <div className="row-wrap mt-12">
-        <button className="btn btn-outline btn-sm" type="button" onClick={() => copyCode(room.code)} disabled={busy}><Icon name="Copy" size={15} />Salin kode</button>
-        {room.status === 'WAITING' && <button className="btn btn-outline btn-sm" type="button" onClick={() => act(room, 'status', 'LOCKED')} disabled={busy}>Kunci ruang</button>}
-        {room.status === 'LOCKED' && <button className="btn btn-outline btn-sm" type="button" onClick={() => act(room, 'status', 'WAITING')} disabled={busy}>Buka ruang</button>}
-        {['WAITING', 'LOCKED'].includes(room.status) && <button className="btn btn-primary btn-sm" type="button" onClick={() => act(room, 'start')} disabled={busy || room.participant_count < room.min_participants}><Icon name="Play" size={15} />Mulai sebagai host</button>}
-        {room.status === 'COUNTDOWN' && <><span className="small muted">{Math.max(0, Math.ceil((Date.parse(room.countdown_ends_at || 0) - clock) / 1000)) ? `Hitung mundur ${Math.max(0, Math.ceil((Date.parse(room.countdown_ends_at || 0) - clock) / 1000))} dtk` : 'Hitung mundur selesai'}</span><button className="btn btn-primary btn-sm" type="button" onClick={() => act(room, 'status', 'IN_PROGRESS')} disabled={busy || Date.parse(room.countdown_ends_at || 0) > clock}><Icon name="Play" size={15} />Tandai sesi berjalan</button></>}
-        {room.status === 'IN_PROGRESS' && <><button className="btn btn-outline btn-sm" type="button" onClick={() => act(room, 'status', 'PAUSED')} disabled={busy}>Jeda</button><button className="btn btn-outline btn-sm" type="button" onClick={() => act(room, 'status', 'COMPLETED')} disabled={busy}>Selesaikan sesi</button></>}
-        {room.status === 'PAUSED' && <><button className="btn btn-primary btn-sm" type="button" onClick={() => act(room, 'status', 'IN_PROGRESS')} disabled={busy}>Lanjutkan</button><button className="btn btn-outline btn-sm" type="button" onClick={() => act(room, 'status', 'COMPLETED')} disabled={busy}>Selesaikan sesi</button></>}
-        {['WAITING', 'LOCKED', 'COUNTDOWN', 'IN_PROGRESS', 'PAUSED'].includes(room.status) && <button className="btn btn-outline btn-sm" type="button" onClick={() => act(room, 'status', 'CANCELLED')} disabled={busy}>Batalkan ruang</button>}
+    <PageHead title="Manajemen Game" desc={'Kelola enam template, bank soal, pengaturan, dan penugasan kelas.' + (backend.mode === 'demo' ? ' Soal dan skor dikelola oleh backend DEMO lokal.' : '')} actions={<button className="btn btn-outline" onClick={load} disabled={loading}><Icon name="RefreshCw" size={16}/>Perbarui</button>} />
+    {backend.mode === 'demo' && <Alert tone="warn" title="Batas DEMO lokal">Game, soal, akun, dan hasil tersimpan hanya pada browser ini. Jangan gunakan kredensial atau nilai produksi. Hasil lintas perangkat tidak tersinkron otomatis.</Alert>}
+    {error && <Alert tone="err" title="Tidak dapat memproses game">{error}</Alert>}
+    <div className="card card-pad"><div className="card-title mb-12">{editingId?'Edit game dan bank soal':'Buat game dan bank soal'}</div>
+      <div className="game-form-grid">
+        <Field label="Nama game" required><input className="input" value={form.title} onChange={(e)=>set('title',e.target.value)} /></Field>
+        <Field label="Template permainan" required><select className="input" value={form.template} onChange={(e)=>set('template',e.target.value)}>{GAME_TEMPLATES.map(([id,name])=><option key={id} value={id}>{name}</option>)}</select></Field>
+        <Field label="Mata pelajaran"><select className="input" value={form.subject_id} onChange={(e)=>set('subject_id',e.target.value)}><option value="">Pilih mapel</option>{subjects.map((s)=><option key={s.id} value={s.id}>{s.name}</option>)}</select></Field>
+        <Field label="Kesulitan"><select className="input" value={form.difficulty} onChange={(e)=>set('difficulty',e.target.value)}>{['Mudah','Sedang','Sulit'].map((x)=><option key={x}>{x}</option>)}</select></Field>
+        <Field label="BAB"><input className="input" value={form.chapter} onChange={(e)=>set('chapter',e.target.value)} placeholder="Contoh: BAB 1" /></Field>
+        <Field label="Materi"><input className="input" value={form.material} onChange={(e)=>set('material',e.target.value)} /></Field>
+        <Field label="Deskripsi"><input className="input" value={form.description} onChange={(e)=>set('description',e.target.value)} /></Field>
+        <Field label="Durasi (detik, 0 = tanpa batas)"><input className="input" type="number" min="0" value={form.duration} onChange={(e)=>set('duration',e.target.value)} /></Field>
+        <Field label="Jumlah soal yang dipakai"><input className="input" type="number" min="1" value={form.question_count} onChange={(e)=>set('question_count',e.target.value)} /></Field>
+        <Field label="Batas percobaan individu (0 = tanpa batas)"><input className="input" type="number" min="0" value={form.max_attempts} onChange={(e)=>set('max_attempts',e.target.value)} /></Field>
       </div>
-      <div className="live-room-roster"><div className="semibold small mb-8">Peserta bergabung</div>{room.participants.length ? room.participants.map((p) => <div className="live-room-person" key={p.id}><span>{p.student_name}</span>{['WAITING', 'LOCKED'].includes(room.status) && <button className="btn btn-ghost btn-sm" type="button" onClick={() => remove(room, p)} disabled={busy}>Keluarkan</button>}</div>) : <div className="small muted">Belum ada peserta.</div>}</div>
-      {room.host_view && room.game_settings && room.game_settings.show_leaderboard !== false && <div className="game-live-results"><div className="semibold small mb-8">Hasil peserta sesi ini</div>{(results[room.id]||[]).length ? (results[room.id]||[]).map((r,i)=><div className="live-room-person" key={r.id}><span>{i+1}. {r.student_name}</span><Badge tone="green">{r.score}/100 · {r.correct_count}/{r.total_questions}</Badge></div>):<div className="small muted">Hasil akan muncul setelah peserta menyelesaikan permainan.</div>}</div>}
-    </article>)}</div>}
+      <div className="row-wrap mt-12">{[['individual','Individu'],['live','Live Game Room']].map(([id,label])=><label className="game-check" key={id}><input type="checkbox" checked={form.modes.includes(id)} onChange={()=>toggleMode(id)}/>{label}</label>)}{[['shuffle_questions','Acak soal'],['shuffle_options','Acak pilihan'],['show_explanation','Tampilkan pembahasan'],['show_leaderboard','Leaderboard sesi'],['speed_bonus','Bonus kecepatan']].map(([id,label])=><label className="game-check" key={id}><input type="checkbox" checked={form[id]} onChange={(e)=>set(id,e.target.checked)}/>{label}</label>)}</div>
+      <div className="card-title mt-16 mb-8">Soal</div>
+      {questions.map((q,i)=><div className="game-question-editor" key={i}><div className="row between"><b>Soal {i+1}</b>{questions.length>1&&<button className="btn btn-ghost btn-sm" type="button" onClick={()=>setQuestions((v)=>v.filter((_,j)=>j!==i))}>Hapus</button>}</div>
+        <Field label="Pertanyaan / petunjuk"><textarea className="input" rows="2" value={q.prompt} onChange={(e)=>updateQ(i,'prompt',e.target.value)} /></Field>
+        {form.template==='competition'&&<Field label="Jenis soal kompetisi"><select className="input" value={q.question_type} onChange={(e)=>updateQ(i,'question_type',e.target.value)}>{[['mcq','Pilihan ganda'],['true_false','Benar/salah'],['vocab','Kosakata'],['letters','Susun huruf'],['sentence','Susun kalimat']].map(([id,l])=><option key={id} value={id}>{l}</option>)}</select></Field>}
+        {form.template==='memory'?<div className="game-form-grid"><Field label="Kartu pertama (mis. Arab)"><input className="input" dir="auto" value={q.pair_left} onChange={(e)=>updateQ(i,'pair_left',e.target.value)}/></Field><Field label="Kartu pasangan (arti/gambar URL)"><input className="input" dir="auto" value={q.pair_right} onChange={(e)=>updateQ(i,'pair_right',e.target.value)}/></Field><Field label="Kunci pasangan"><input className="input" value={q.correctText||'pair'} onChange={(e)=>updateQ(i,'correctText',e.target.value)} placeholder="pair"/></Field></div> : <div className="game-form-grid">{['who_am_i','competition'].includes(form.template)&&!['true_false','letters','sentence'].includes(form.template==='competition'?q.question_type:form.template)&&<Field label="Pilihan dipisahkan dengan |"><input className="input" dir="auto" value={q.optionsText} onChange={(e)=>updateQ(i,'optionsText',e.target.value)} placeholder="قَلَمٌ | كِتَابٌ | بَيْتٌ | مَدْرَسَةٌ"/></Field>}{['letters','sentence'].includes(form.template==='competition'?q.question_type:form.template)&&<Field label="Huruf/kata acak dipisahkan dengan |"><input className="input" dir="auto" value={q.optionsText} onChange={(e)=>updateQ(i,'optionsText',e.target.value)} placeholder="ك | ت | ا | ب"/></Field>}<Field label={['letters','sentence'].includes(form.template==='competition'?q.question_type:form.template)?'Jawaban benar, urutkan token dengan |':'Jawaban benar'}><input className="input" dir="auto" value={q.correctText} onChange={(e)=>updateQ(i,'correctText',e.target.value)} placeholder={(form.template==='true_false'||q.question_type==='true_false')?'صَحِيحٌ atau خَطَأٌ':form.template==='letters'||q.question_type==='letters'?'ك | ت | ا | ب':form.template==='sentence'||q.question_type==='sentence'?'أَنَا | أَذْهَبُ | إِلَى | الْمَدْرَسَةِ':''}/></Field></div>}
+        <div className="game-form-grid mt-8"><Field label="URL gambar (opsional)"><input className="input" type="url" value={q.media_url} onChange={(e)=>updateQ(i,'media_url',e.target.value)}/></Field><Field label="Pembahasan"><input className="input" dir="auto" value={q.explanation} onChange={(e)=>updateQ(i,'explanation',e.target.value)}/></Field><Field label="Bobot skor"><input className="input" type="number" min="0" value={q.points} onChange={(e)=>updateQ(i,'points',e.target.value)}/></Field></div>
+      </div>)}
+      <div className="row-wrap mt-12"><button className="btn btn-outline" type="button" onClick={()=>setQuestions((v)=>[...v,newGameQuestion()])}><Icon name="Plus" size={15}/>Tambah soal</button>{editingId&&<button className="btn btn-outline" type="button" disabled={busy} onClick={()=>{setEditingId(null);setForm(defaultGameForm());setQuestions([newGameQuestion()]);}}>Batal edit</button>}<button className="btn btn-outline" type="button" disabled={busy} onClick={()=>saveGame('DRAFT')}>{busy&&<Spinner/>}Simpan draft</button><button className="btn btn-primary" type="button" disabled={busy} onClick={()=>saveGame('PUBLISHED')}>{busy&&<Spinner/>}{editingId?'Simpan dan terbitkan':'Terbitkan game'}</button></div>
+    </div>
+    <section className="card card-pad mt-16"><div className="card-title mb-12">Tugaskan game terbit</div><form className="game-form-grid" onSubmit={assign}><Field label="Game"><select className="input" required value={assignForm.game_id} onChange={(e)=>setAssignForm((v)=>Object.assign({},v,{game_id:e.target.value}))}><option value="">Pilih game</option>{catalog.filter((g)=>g.status==='PUBLISHED').map((g)=><option key={g.id} value={g.id}>{g.title}</option>)}</select></Field><Field label="Kelas sasaran"><select className="input" required value={assignForm.class_id} onChange={(e)=>setAssignForm((v)=>Object.assign({},v,{class_id:e.target.value}))}><option value="">Pilih kelas</option>{classes.map((c)=><option key={c.id} value={c.id}>{c.name}</option>)}</select></Field><Field label="Mulai (opsional)"><input className="input" type="datetime-local" value={assignForm.start_at} onChange={(e)=>setAssignForm((v)=>Object.assign({},v,{start_at:e.target.value}))}/></Field><Field label="Berakhir (opsional)"><input className="input" type="datetime-local" value={assignForm.end_at} onChange={(e)=>setAssignForm((v)=>Object.assign({},v,{end_at:e.target.value}))}/></Field><Field label="Batas percobaan individu"><input className="input" type="number" min="0" value={assignForm.max_attempts} onChange={(e)=>setAssignForm((v)=>Object.assign({},v,{max_attempts:e.target.value}))}/></Field><div className="row-wrap">{[['individual','Individu'],['live','Live']].map(([id,label])=><label className="game-check" key={id}><input type="checkbox" checked={assignForm.modes.includes(id)} onChange={()=>toggleAssignMode(id)}/>{label}</label>)}</div><div><button className="btn btn-primary" disabled={busy||!selected}>{busy&&<Spinner/>}Tugaskan</button></div></form></section>
+    <div className="card-title mt-16">Game Anda</div>
+    {loading?<div className="card card-pad"><LoadingState/></div>:!catalog.length?<div className="card card-pad"><EmptyState icon="Gamepad2" title="Belum ada game" text="Buat game dengan soal lalu terbitkan untuk mulai menugaskan."/></div>:<div className="student-card-list">{catalog.map((g)=><article className="card card-pad" key={g.id}><div className="row between"><div><div className="eyebrow">{(GAME_TEMPLATES.find((x)=>x[0]===g.template)||[])[1]||g.template} · {g.subject_name}</div><h3>{g.title}</h3></div><Badge tone={g.status==='PUBLISHED'?'green':'amber'}>{g.status==='PUBLISHED'?'Terbit':'Draft'}</Badge></div><p>{g.description||'—'} · {g.question_count} soal · {g.assignments.length} kelas ditugaskan</p>{g.assignments.map((a)=><div className="small muted" key={a.id}>{a.class_name} · {a.enabled===false?'Nonaktif':'Aktif'} · {(a.modes||[]).join(', ')}</div>)}<button className="btn btn-outline btn-sm mt-8" type="button" onClick={()=>editGame(g)} disabled={busy}>Edit game / soal</button> <button className="btn btn-outline btn-sm mt-8" type="button" style={{ color: 'var(--red)' }} onClick={()=>removeGame(g)} disabled={busy}><Icon name="Trash2" size={15}/>Hapus</button></article>)}</div>}
   </>;
 }
-
-Object.assign(window, { AdminLiveGamePage });
+Object.assign(window,{AdminGamePage});
